@@ -1,11 +1,11 @@
 ---
 name: feinai-write-tasks
-description: Use when a spec + plan already exist in feinai (written by `feinai-write-spec` or manually) and need to be broken down into executable tasks. Decomposes the plan into atomic `feinai add` calls, analyzes file-level parallelism, and embeds TDD instructions. Output: a set of tasks with `blocked_by` dependencies ready for `feinai-dispatch` to execute.
+description: "Use when a spec + plan already exist in feinai (written by `feinai-write-spec` or manually) and need to be broken down into executable tasks. Decomposes the plan into atomic `feinai add` calls, analyzes file-level parallelism, and embeds TDD instructions. Output: a set of tasks with `blocked_by` dependencies ready for `feinai-dispatch` to execute."
 ---
 
 # feinai-write-tasks
 
-Read an existing spec + plan from tasca, produce the executable task set.
+Read an existing spec + plan from feinai, produce the executable task set.
 
 ## Preconditions
 
@@ -81,7 +81,7 @@ extract the fixtures into a tiny TASK-NNN-0 that other tasks block on.
 
 ### Step 4 — Write the tasks
 
-For each task:
+Take the gate commands from the project's instructions; the ones below are placeholders. For each task:
 
 ```bash
 feinai add TASK-NNN-X "subject" \
@@ -180,4 +180,4 @@ don't cascade across unrelated work.
 | Load spec + plan in one call | `feinai spec show SPEC-N --full` |
 | List existing tasks for spec | `feinai list --spec SPEC-N` |
 | Add task | `feinai add TASK-X "subject" --spec SPEC-N --desc "..." --gate "..." [--blocked-by TASK-Y]` |
-| Edit task after writing | `feinai task edit TASK-X --desc "..." --gate "..."` |
+| Edit task after writing | `feinai edit TASK-X --desc "..." --gate "..."` |

@@ -13,7 +13,7 @@ Run this first:
 
 ```bash
 feinai --version 2>&1
-feinai git status 2>&1
+git status 2>&1
 ```
 
 ---
@@ -32,19 +32,6 @@ feinai is not installed. Tell the user:
 
 ---
 
-### Failure: `feinai` found but `opengit: command not found`
-
-opengit ships with feinai — if it's missing, the install is incomplete. Tell the user:
-
-> opengit is missing. Reinstall feinai:
-> ```bash
-> bun remove -g feinai && bun install -g feinai
-> ```
-
-**Offer to run it.**
-
----
-
 ### Failure: `feinai --version` works but `feinai status` fails with command not found in a different shell
 
 PATH issue in non-interactive SSH session. `~/.bun/bin` is not loaded. Tell the user:
@@ -54,19 +41,18 @@ PATH issue in non-interactive SSH session. `~/.bun/bin` is not loaded. Tell the 
 > Fix with a one-time symlink (requires root):
 > ```bash
 > sudo ln -sf ~/.bun/bin/feinai /usr/local/bin/feinai
-> sudo ln -sf ~/.bun/bin/opengit /usr/local/bin/opengit
 > sudo ln -sf ~/.bun/bin/bun /usr/local/bin/bun
 > ```
 > Or via root SSH if available:
 > ```bash
-> ssh root@<host> "ln -sf /home/<user>/.bun/bin/feinai /usr/local/bin/feinai && ln -sf /home/<user>/.bun/bin/opengit /usr/local/bin/opengit && ln -sf /home/<user>/.bun/bin/bun /usr/local/bin/bun"
+> ssh root@<host> "ln -sf /home/<user>/.bun/bin/feinai /usr/local/bin/feinai && ln -sf /home/<user>/.bun/bin/bun /usr/local/bin/bun"
 > ```
 
 **Offer to run it.** Full docs: https://www.npmjs.com/package/feinai
 
 ---
 
-### Failure: `feinai status` exits with code 2 (`no .tasca/tasca.db found`)
+### Failure: `feinai status` exits with code 2 (`no .feinai/feinai.db found`)
 
 feinai is installed but no DB in this project. Ask the user:
 
@@ -76,31 +62,14 @@ feinai is installed but no DB in this project. Ask the user:
 
 ---
 
-### Failure: skills not activating in Claude Code
-
-If Claude Code doesn't recognize `feinai-dispatch` or other skills after install:
-
-> Run this to activate the skills:
-> ```bash
-> mkdir -p ~/.claude/skills
-> SKILLS=~/.bun/install/global/node_modules/feinai/skills
-> for skill in feinai-sdd feinai-write-spec feinai-write-tasks feinai-dispatch feinai-implement; do
->   ln -sf "$SKILLS/$skill" ~/.claude/skills/$skill
-> done
-> ```
-> Then restart Claude Code.
-
-**Offer to run it.**
-
----
-
 **Do not proceed to dispatch until all checks pass:**
 
 1. `feinai --version` returns a version number
-2. `feinai git status` runs without error
+2. `git status` runs without error
 3. `feinai status` exits 0 (DB found)
 4. The SPEC has pending tasks: `feinai list --spec SPEC-NNN --pending --json` returns non-empty
 5. Current working directory is a clean git repo
+6. `git ls-files .feinai` prints nothing. The DB is local state: a tracked copy gives each worktree its own stale DB, so `feinai done` fails there. If it prints a path, stop and tell the user to run `git rm --cached .feinai/feinai.db`, add `.feinai/` to `.gitignore` and commit.
 
 If any fails: stop, diagnose, offer the fix above.
 
@@ -115,7 +84,7 @@ User invokes with a SPEC-ID. If missing, ask: *"Which SPEC-ID? (e.g. SPEC-121-B)
 Before doing anything, check for orphaned tasks:
 
 ```bash
-feinai list --spec SPEC-NNN --json | jq '.[] | select(.status == "in_progress")'
+feinai list --spec SPEC-NNN --status in_progress --json
 ```
 
 Any `in_progress` task is a previous run that didn't complete. For each:
@@ -162,7 +131,7 @@ For each iteration:
 For each task to dispatch:
 
 ```bash
-git worktree add .claude/worktrees/TASK-X-id <branch>
+git worktree add -b <branch> .worktrees/TASK-X-id
 ```
 
 Branch naming: `feature/TASK-X-id-slug` derived from the subject.
@@ -171,7 +140,7 @@ Branch naming: `feature/TASK-X-id-slug` derived from the subject.
 
 ```bash
 feinai take TASK-X --json   # atomic claim, sin worktree aún
-feinai task edit TASK-X --worktree .claude/worktrees/TASK-X-id
+feinai edit TASK-X --worktree .worktrees/TASK-X-id
 ```
 
 Order matters: take first (atomic reservation), then edit to record the worktree path.
@@ -206,7 +175,7 @@ Spawn a subagent with this prompt template:
 
 ### Step E — Wait for results
 
-Each subagent returns `done` or `fail`. The tasca DB is the source of truth — re-query it:
+Each subagent returns `done` or `fail`. The feinai DB is the source of truth — re-query it:
 
 ```bash
 feinai show TASK-X --json
@@ -218,8 +187,7 @@ For each `completed` task:
 
 1. Run the quality gates **again** in the worktree as a final check
 2. Merge worktree branch into the working branch
-3. Remove the worktree: `git worktree remove .claude/worktrees/TASK-X-id`
-4. Clear the worktree field: `feinai task edit TASK-X --worktree ""`
+3. Remove the worktree: `git worktree remove .worktrees/TASK-X-id`
 
 If the merge has conflicts → treat as a failure. Go to Phase 3.
 
@@ -234,7 +202,7 @@ When a task fails OR a merge conflict appears:
 ### Repair sequence
 
 1. **Attempt your own fix** — read the worktree, the error, the failed task description. If it's a clear typo or trivial issue, fix it inline.
-2. **If stuck → advisor()** — call the advisor with full context. Wait for the response.
+2. **If stuck and an advisor tool is available** — call it with full context. Wait for the response.
 3. **If still stuck → ask the user** — present:
    - What failed
    - What you tried
@@ -243,7 +211,7 @@ When a task fails OR a merge conflict appears:
 
 ### After repair
 
-- If you resolved it: `feinai task edit TASK-X --worktree ...` (if path changed), then `feinai release TASK-X` so it returns to pending, OR `feinai done` if you finished it yourself
+- If you resolved it: remove its worktree and run `feinai reopen TASK-X` so it returns to pending (`release` only accepts `in_progress`). If you finished it yourself: `feinai reopen`, `feinai take`, then `feinai done`
 - If user took over: stop. Tell them to relaunch dispatch with: `/feinai-dispatch SPEC-NNN`
 
 **Never silently retry.** Always make the failure visible.
@@ -254,11 +222,10 @@ When a task fails OR a merge conflict appears:
 
 When `feinai list --spec SPEC-NNN --pending --json` returns empty:
 
-1. Verify no `in_progress` left:
+1. Verify every task is `completed`:
    ```bash
-   feinai list --spec SPEC-NNN --json | jq '.[] | select(.status != "completed")'
+   feinai list --spec SPEC-NNN --json
    ```
-   Should be empty.
 2. Run project-wide quality gates (from the plan)
 3. Report to the user:
    > SPEC-NNN complete. All N tasks done. Quality gates pass.
@@ -270,7 +237,7 @@ When `feinai list --spec SPEC-NNN --pending --json` returns empty:
 
 ### Worktree rules (non-negotiable)
 
-- ✅ Each task gets its own worktree under `.claude/worktrees/`
+- ✅ Each task gets its own worktree under `.worktrees/`
 - ✅ Subagent never switches branches, never works outside its worktree
 - ✅ Worktree path is recorded in feinai (`worktree` field) immediately after `take`
 - ❌ Never run `git checkout` on the main working tree during dispatch
@@ -278,19 +245,18 @@ When `feinai list --spec SPEC-NNN --pending --json` returns empty:
 
 ### Parallelism rules
 
-- The "same file = sequential" decision was already made in `feinai-write-tasks` via `blocked_by`. Trust it.
-- Do NOT second-guess. If `blocked_by` says A→B→C, run them sequentially even in "parallel mode."
+- The "same file = sequential" decision was made in `feinai-write-tasks` via `blocked_by`: if it says A→B→C, run them sequentially even in "parallel mode."
 - "Parallel mode" only means: tasks with no inter-dependencies dispatch concurrently.
 
 ### Failure rules
 
 - One failure = stop the world. Block the loop. Repair before continuing.
-- Failed tasks keep their `worktree` field (we changed this intentionally) — so you can inspect them.
-- Never auto-retry. Repair → release → next loop iteration will re-pick.
+- Failed tasks keep their `worktree` field so you can inspect them.
+- Never auto-retry. Repair → reopen → next loop iteration will re-pick.
 
 ### Subagent autonomy boundary
 
-- Subagents read only their task payload (via `feinai take` / `feinai show`)
+- Subagents read only their task payload (via `feinai show`)
 - Subagents may not call other skills (they have no context)
 - Subagents may not dispatch other subagents
 - All decision-making about scope, parallelism, and failure handling stays in the dispatcher
@@ -303,7 +269,7 @@ When `feinai list --spec SPEC-NNN --pending --json` returns empty:
 - ❌ Dispatch without creating a worktree first
 - ❌ Decide parallel vs sequential without asking the user
 - ❌ Continue the loop while a task is failed
-- ❌ Read every task description yourself — let the subagent do it via `feinai take`
+- ❌ Read every task description yourself — let the subagent do it via `feinai show`
 - ❌ Modify tasks during dispatch — that's `feinai-write-tasks`' job; if specs need changing, stop and tell the user
 
 ---
@@ -313,10 +279,11 @@ When `feinai list --spec SPEC-NNN --pending --json` returns empty:
 | Need | Command |
 |---|---|
 | Find ready tasks | `feinai list --spec SPEC-N --pending --json` |
-| Find orphans | `feinai list --spec SPEC-N --json \| jq '.[] \| select(.status=="in_progress")'` |
+| Find orphans | `feinai list --spec SPEC-N --status in_progress --json` |
 | Claim a task | `feinai take TASK-X` |
-| Record worktree | `feinai task edit TASK-X --worktree <path>` |
+| Record worktree | `feinai edit TASK-X --worktree <path>` |
 | Mark done | `feinai done TASK-X --result "..."` |
 | Mark failed (keeps worktree) | `feinai fail TASK-X --error "..."` |
-| Release for retry | `feinai release TASK-X` |
+| Release an in_progress task | `feinai release TASK-X` |
+| Reopen a failed task | `feinai reopen TASK-X` |
 | Verify all done | `feinai list --spec SPEC-N --json` |
